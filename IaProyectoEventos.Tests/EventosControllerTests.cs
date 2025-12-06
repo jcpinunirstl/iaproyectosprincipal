@@ -109,5 +109,53 @@ namespace IaProyectoEventos.Tests
             Assert.Equal("Nuevo Evento", returned.Nombre);
             Assert.True(returned.Id > 0);
         }
+
+        [Fact]
+        public async Task PostEvento_ReturnsBadRequest_WhenTipoMissing()
+        {
+            using var context = CreateInMemoryContext("PostEventoNoTipoDb");
+            // Do NOT add TipoEvento
+            var controller = new EventosController(context);
+
+            var evento = new Evento
+            {
+                Nombre = "Evento Fail",
+                TipoEventoId = 999,
+                FechaInicio = DateOnly.FromDateTime(DateTime.UtcNow),
+                FechaFin = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)),
+                HoraInicio = TimeOnly.FromDateTime(DateTime.UtcNow),
+                HoraFin = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(1)),
+                Estado = true
+            };
+
+            var result = await controller.PostEvento(evento);
+            Assert.IsType<BadRequestObjectResult>(result.Result);
+        }
+
+        [Fact]
+        public async Task PostEvento_ReturnsBadRequest_WhenUsuarioMissing()
+        {
+            using var context = CreateInMemoryContext("PostEventoNoUsuarioDb");
+            // Ensure TipoEvento exists
+            context.TipoEventos.Add(new TipoEvento { Id = 1, Nombre = "Taller", Estado = true });
+            await context.SaveChangesAsync();
+
+            var controller = new EventosController(context);
+
+            var evento = new Evento
+            {
+                Nombre = "Evento Fail User",
+                TipoEventoId = 1,
+                UsuarioId = 999, // non-existing user
+                FechaInicio = DateOnly.FromDateTime(DateTime.UtcNow),
+                FechaFin = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)),
+                HoraInicio = TimeOnly.FromDateTime(DateTime.UtcNow),
+                HoraFin = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(1)),
+                Estado = true
+            };
+
+            var result = await controller.PostEvento(evento);
+            Assert.IsType<BadRequestObjectResult>(result.Result);
+        }
     }
 }

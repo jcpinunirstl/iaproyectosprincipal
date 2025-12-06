@@ -90,5 +90,35 @@ namespace IaProyectoEventos.Tests
 
             Assert.IsType<BadRequestObjectResult>(result);
         }
+
+        [Fact]
+        public async Task DeletePersona_ReturnsNotFound_WhenMissing()
+        {
+            using var context = CreateInMemoryContext("DeletePersonaNotFoundDb");
+            var controller = new PersonasController(context);
+            var result = await controller.DeletePersona(999);
+            Assert.IsType<NotFoundResult>(result);
+        }
+    }
+
+    public class TipoEventosControllerErrorTests
+    {
+        private AppDbContext CreateInMemoryContext(string dbName)
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(dbName)
+                .Options;
+            return new AppDbContext(options);
+        }
+
+        [Fact]
+        public async Task GetTipoEvento_ReturnsNotFound_WhenMissing()
+        {
+            using var context = CreateInMemoryContext("TipoEventoMissingDb");
+            var controller = new IaProyectoEventos.Controllers.TipoEventosController(context);
+            var result = await controller.GetTipoEvento(1234);
+            Assert.IsType<ActionResult<IaProyectoEventos.Models.TipoEvento>>(result);
+            Assert.IsType<NotFoundResult>(result.Result);
+        }
     }
 }

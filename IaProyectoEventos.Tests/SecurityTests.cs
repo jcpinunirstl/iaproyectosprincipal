@@ -149,35 +149,6 @@ namespace IaProyectoEventos.Tests
             Assert.IsType<UnauthorizedObjectResult>(loginRes.Result);
         }
 
-        // Intentional erroneous test: expects authentication to succeed for an injection payload (it should not)
-        [Fact]
-        public async Task SqlInjection_LoginBypassAttempt_Erroneous()
-        {
-            using var context = CreateInMemoryContext("SqlInjectionLoginErrDb");
-            var config = CreateTestConfiguration();
-            var controller = new UsuariosController(context, config);
-
-            // register a normal user
-            var reg = new UsuariosController.UsuarioRegisterRequest
-            {
-                Username = "normaluser2",
-                Password = "NormalP@ss2"
-            };
-            var regRes = await controller.Register(reg);
-            Assert.NotNull(regRes.Value);
-
-            // attempt SQL injection in username field
-            var loginReq = new UsuariosController.LoginRequest
-            {
-                Username = "' OR '1'='1",
-                Password = "doesntmatter"
-            };
-
-            var loginRes = await controller.Login(loginReq);
-            // Erroneous expectation: assert that login returns OK (this will fail because it should be Unauthorized)
-            Assert.IsType<OkObjectResult>(loginRes.Result);
-        }
-
         [Fact]
         public async Task Validation_PostUsuarioMissingPasswordHash_ReturnsBadRequest()
         {
