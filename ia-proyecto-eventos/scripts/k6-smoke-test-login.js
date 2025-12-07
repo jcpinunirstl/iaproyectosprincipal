@@ -2,8 +2,8 @@ import http from 'k6/http';
 import { check, group, fail } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:5142';
-const TEST_USERNAME = __ENV.TEST_USERNAME || 'testuser';
-const TEST_PASSWORD = __ENV.TEST_PASSWORD || 'TestPassword123!';
+const TEST_USERNAME = __ENV.TEST_USERNAME || 'jcarlos';
+const TEST_PASSWORD = __ENV.TEST_PASSWORD || 'MiClaveSegura123';
 
 export const options = {
   vus: 1,
