@@ -1,0 +1,44 @@
+/* Estilos personalizados complementarios a Bootstrap */
+
+body {
+    background-color: #f8f9fa;
+}
+
+/* Estilos para tabs personalizados */
+.tab-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.7);
+    text-decoration: none;
+}
+
+.tab-btn:hover {
+    color: rgba(255,255,255,0.9);
+}
+
+.tab-btn.active {
+    color: white;
+    border-bottom: 2px solid white;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Espaciado adicional */
+.event-card {
+    transition: transform 0.2s;
+}
+
+.event-card:hover {
+    transform: translateY(-5px);
+}
+
+/* Animaciones suaves para las tablas */
+tbody tr {
+    transition: background-color 0.2s;
+}

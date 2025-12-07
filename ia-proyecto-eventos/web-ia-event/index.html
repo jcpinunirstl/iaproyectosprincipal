@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Eventos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container-fluid">
+        <header class="bg-primary text-white py-3 mb-4">
+            <div class="container">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h1 class="h3 mb-0">Eventos Disponibles</h1>
+                    <div>
+                        <button id="loginBtn" class="btn btn-light me-2">
+                            <i class="bi bi-box-arrow-in-right"></i> Iniciar Sesión
+                        </button>
+                        <button id="registerBtn" class="btn btn-outline-light">
+                            <i class="bi bi-person-plus"></i> Registrarse
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div id="publicView" class="container">
+            <h2 class="mb-4">Lista de Eventos</h2>
+            <div id="publicEventsList" class="row"></div>
+        </div>
+
+        <div id="adminView" style="display: none;">
+            <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+                <div class="container-fluid">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item">
+                            <button class="nav-link btn btn-link tab-btn active" data-tab="eventos">Eventos</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link btn btn-link tab-btn" data-tab="tipoEventos">Tipos de Evento</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link btn btn-link tab-btn" data-tab="personas">Personas</button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link btn btn-link tab-btn" data-tab="asistencias">Registro de Asistencia</button>
+                        </li>
+                    </ul>
+                    <button id="logoutBtn" class="btn btn-outline-light">
+                        <i class="bi bi-box-arrow-right"></i> Cerrar Sesión
+                    </button>
+                </div>
+            </nav>
+
+            <div class="container-fluid">
+                <div id="eventosTab" class="tab-content active">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2>Gestión de Eventos</h2>
+                        <button id="createBtn" class="btn btn-success">
+                            <i class="bi bi-plus-circle"></i> Crear Nuevo Evento
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="eventsTable">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nombre</th>
+                                    <th>Descripción</th>
+                                    <th>Dirección</th>
+                                    <th>Costo</th>
+                                    <th>Fecha Inicio</th>
+                                    <th>Fecha Fin</th>
+                                    <th>Hora Inicio</th>
+                                    <th>Hora Fin</th>
+                                    <th>Tipo Evento</th>
+                                    <th>Usuario</th>
+                                    <th>Estado</th>
+                            <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="eventsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="tipoEventosTab" class="tab-content">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2>Gestión de Tipos de Evento</h2>
+                        <button id="createTipoEventoBtn" class="btn btn-success">
+                            <i class="bi bi-plus-circle"></i> Crear Nuevo Tipo de Evento
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="tipoEventosTable">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nombre</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tipoEventosBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="personasTab" class="tab-content">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2>Gestión de Personas</h2>
+                        <button id="createPersonaBtn" class="btn btn-success">
+                            <i class="bi bi-plus-circle"></i> Crear Nueva Persona
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="personasTable">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nombre</th>
+                                    <th>Teléfono</th>
+                                    <th>Fecha Nacimiento</th>
+                                    <th>Género</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="personasBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="asistenciasTab" class="tab-content">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2>Gestión de Asistencias</h2>
+                        <button id="createAsistenciaBtn" class="btn btn-success">
+                            <i class="bi bi-plus-circle"></i> Crear Nueva Asistencia
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="asistenciasTable">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Fecha Entrada</th>
+                                    <th>Observación</th>
+                                    <th>Evento</th>
+                                    <th>Persona</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="asistenciasBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Login -->
+        <div id="loginModal" class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Iniciar Sesión</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="loginForm">
+                            <div class="mb-3">
+                                <label for="loginUsername" class="form-label">Usuario:</label>
+                                <input type="text" class="form-control" id="loginUsername" name="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="loginPassword" class="form-label">Contraseña:</label>
+                                <input type="password" class="form-control" id="loginPassword" name="password" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Iniciar Sesión</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Registro -->
+        <div id="registerModal" class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Registrarse</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="registerForm">
+                            <div class="mb-3">
+                                <label for="regUsername" class="form-label">Usuario:</label>
+                                <input type="text" class="form-control" id="regUsername" name="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="regPassword" class="form-label">Contraseña:</label>
+                                <input type="password" class="form-control" id="regPassword" name="password" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="regNombre" class="form-label">Nombre:</label>
+                                <input type="text" class="form-control" id="regNombre" name="nombre" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="regTelefono" class="form-label">Teléfono:</label>
+                                <input type="text" class="form-control" id="regTelefono" name="telefono">
+                            </div>
+                            <div class="mb-3">
+                                <label for="regFechaNacimiento" class="form-label">Fecha Nacimiento:</label>
+                                <input type="date" class="form-control" id="regFechaNacimiento" name="fechaNacimiento">
+                            </div>
+                            <div class="mb-3">
+                                <label for="regGenero" class="form-label">Género:</label>
+                                <select class="form-select" id="regGenero" name="genero">
+                                    <option value="0">Masculino</option>
+                                    <option value="1">Femenino</option>
+                                    <option value="2">Otro</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Registrarse</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Evento -->
+        <div id="formModal" class="modal fade" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="formTitle">Crear Evento</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="eventForm">
+                            <input type="hidden" id="eventId" name="id">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="nombre" class="form-label">Nombre:</label>
+                                    <input type="text" class="form-control" id="nombre" name="nombre" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="costo" class="form-label">Costo:</label>
+                                    <input type="number" class="form-control" id="costo" name="costo" step="0.01" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="descripcion" class="form-label">Descripción:</label>
+                                <textarea class="form-control" id="descripcion" name="descripcion" rows="3" required></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="direccion" class="form-label">Dirección:</label>
+                                <input type="text" class="form-control" id="direccion" name="direccion" required>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="fechaInicio" class="form-label">Fecha Inicio:</label>
+                                    <input type="date" class="form-control" id="fechaInicio" name="fechaInicio" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="fechaFin" class="form-label">Fecha Fin:</label>
+                                    <input type="date" class="form-control" id="fechaFin" name="fechaFin" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="horaInicio" class="form-label">Hora Inicio:</label>
+                                    <input type="time" class="form-control" id="horaInicio" name="horaInicio" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="horaFin" class="form-label">Hora Fin:</label>
+                                    <input type="time" class="form-control" id="horaFin" name="horaFin" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="tipoEventoId" class="form-label">Tipo Evento:</label>
+                                    <select class="form-select" id="tipoEventoId" name="tipoEventoId" required></select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <div class="form-check mt-4">
+                                        <input type="checkbox" class="form-check-input" id="estado" name="estado">
+                                        <label class="form-check-label" for="estado">Activo</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Guardar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Tipo Evento -->
+        <div id="tipoEventoModal" class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="tipoEventoFormTitle">Crear Tipo de Evento</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="tipoEventoForm">
+                            <input type="hidden" id="tipoEventoFormId" name="id">
+                            <div class="mb-3">
+                                <label for="tipoEventoNombre" class="form-label">Nombre:</label>
+                                <input type="text" class="form-control" id="tipoEventoNombre" name="nombre" required>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input type="checkbox" class="form-check-input" id="tipoEventoEstado" name="estado">
+                                <label class="form-check-label" for="tipoEventoEstado">Activo</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Guardar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Asistencia -->
+        <div id="asistenciaModal" class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="asistenciaFormTitle">Crear Asistencia</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="asistenciaForm">
+                            <input type="hidden" id="asistenciaId" name="id">
+                            <div class="mb-3">
+                                <label for="asistenciaFechaEntrada" class="form-label">Fecha Entrada:</label>
+                                <input type="datetime-local" class="form-control" id="asistenciaFechaEntrada" name="fechaEntrada" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="asistenciaObservacion" class="form-label">Observación:</label>
+                                <textarea class="form-control" id="asistenciaObservacion" name="observacion" rows="3"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="asistenciaEventoId" class="form-label">Evento:</label>
+                                <select class="form-select" id="asistenciaEventoId" name="eventoId" required></select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="asistenciaPersonaId" class="form-label">Persona:</label>
+                                <select class="form-select" id="asistenciaPersonaId" name="personaId" required></select>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Guardar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Persona -->
+        <div id="personaModal" class="modal fade" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="personaFormTitle">Crear Persona</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="personaForm">
+                            <input type="hidden" id="personaId" name="id">
+                            <div class="mb-3">
+                                <label for="personaNombre" class="form-label">Nombre:</label>
+                                <input type="text" class="form-control" id="personaNombre" name="nombre" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="personaTelefono" class="form-label">Teléfono:</label>
+                                <input type="text" class="form-control" id="personaTelefono" name="telefono">
+                            </div>
+                            <div class="mb-3">
+                                <label for="personaFechaNacimiento" class="form-label">Fecha Nacimiento:</label>
+                                <input type="date" class="form-control" id="personaFechaNacimiento" name="fechaNacimiento">
+                            </div>
+                            <div class="mb-3">
+                                <label for="personaGenero" class="form-label">Género:</label>
+                                <select class="form-select" id="personaGenero" name="genero">
+                                    <option value="0">Masculino</option>
+                                    <option value="1">Femenino</option>
+                                    <option value="2">Otro</option>
+                                </select>
+                            </div>
+                            <div class="form-check mb-3">
+                                <input type="checkbox" class="form-check-input" id="personaEstado" name="estado">
+                                <label class="form-check-label" for="personaEstado">Activo</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Guardar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
