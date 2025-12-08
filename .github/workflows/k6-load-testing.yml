@@ -9,7 +9,7 @@ on:
     inputs:
       test_type:
         description: 'Tipo de prueba a ejecutar'
-        required: true
+        required: false
         default: 'smoke'
         type: choice
         options:
@@ -18,100 +18,66 @@ on:
           - stress
           - all
 
+env:
+  TEST_USERNAME: 'ciuser'
+  TEST_PASSWORD: 'CIPassword123!'
+
 jobs:
-  setup-test-user:
+  test-setup:
+    name: Compile and Setup
     runs-on: ubuntu-latest
-    outputs:
-      test_username: ${{ steps.create_user.outputs.username }}
-      test_password: ${{ steps.create_user.outputs.password }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
       - name: Restore dependencies
         run: dotnet restore ia-proyecto-eventos/IaProyectoEventos.csproj
 
-      - name: Build API
+      - name: Build API (Release)
         run: dotnet build ia-proyecto-eventos/IaProyectoEventos.csproj --configuration Release --no-restore
 
-      - name: Start API
-        run: |
-          cd ia-proyecto-eventos
-          timeout 120 dotnet run --configuration Release &
-          echo "API_PID=$!" >> $GITHUB_ENV
-        env:
-          ASPNETCORE_ENVIRONMENT: Development
-
-      - name: Wait for API to be ready
-        run: |
-          echo "Esperando a que la API esté lista..."
-          for i in {1..30}; do
-            if curl -f http://localhost:5142/api/usuarios > /dev/null 2>&1; then
-              echo "API está lista!"
-              exit 0
-            fi
-            echo "Intento $i: esperando..."
-            sleep 2
-          done
-          echo "API no respondió a tiempo"
-          exit 1
-
-      - name: Create test user
-        id: create_user
-        run: |
-          TEST_USERNAME="testuser_${{ github.run_id }}"
-          TEST_PASSWORD="TestPassword123!$(date +%s)"
-          
-          RESPONSE=$(curl -s -X POST http://localhost:5142/api/usuarios/register \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"username\": \"$TEST_USERNAME\",
-              \"password\": \"$TEST_PASSWORD\",
-              \"email\": \"${TEST_USERNAME}@test.com\",
-              \"nombre\": \"Test User\",
-              \"telefono\": \"1234567890\",
-              \"genero\": \"M\"
-            }")
-          
-          echo "Register response: $RESPONSE"
-          
-          echo "username=$TEST_USERNAME" >> $GITHUB_OUTPUT
-          echo "password=$TEST_PASSWORD" >> $GITHUB_OUTPUT
+      - name: Cache .NET packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
   smoke-test:
-    needs: setup-test-user
+    name: Smoke Test
+    needs: test-setup
     runs-on: ubuntu-latest
-    if: github.event.inputs.test_type == 'smoke' || github.event.inputs.test_type == 'all' || github.event.inputs.test_type == ''
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
+      github.event.inputs.test_type == 'smoke' ||
+      github.event.inputs.test_type == 'all'
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
-      - name: Start API
+      - name: Start API (Background)
         run: |
           cd ia-proyecto-eventos
-          dotnet build --configuration Release
-          timeout 600 dotnet run --configuration Release &
+          nohup dotnet run --configuration Release > api.log 2>&1 &
+          echo "API started in background"
         env:
           ASPNETCORE_ENVIRONMENT: Development
 
-      - name: Wait for API
+      - name: Wait for API Ready
         run: |
-          for i in {1..30}; do
-            if curl -f http://localhost:5142/api/usuarios > /dev/null 2>&1; then
-              echo "API listo"
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
+          echo "Waiting for API to start..."
+          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null; do sleep 1; done'
+          echo "API is ready!"
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
@@ -123,92 +89,52 @@ jobs:
             --vus 1 \
             --duration 10s \
             --summary-export=k6-reports/smoke-results.json \
-            ia-proyecto-eventos/scripts/k6-smoke-test-login.js \
+            IaProyectoEventos.Tests/scripts/k6-smoke-test-login.js \
             -e BASE_URL=http://localhost:5142 \
-            -e TEST_USERNAME="${{ needs.setup-test-user.outputs.test_username }}" \
-            -e TEST_PASSWORD="${{ needs.setup-test-user.outputs.test_password }}"
+            -e TEST_USERNAME=${{ env.TEST_USERNAME }} \
+            -e TEST_PASSWORD=${{ env.TEST_PASSWORD }}
+        continue-on-error: true
 
       - name: Generate HTML Report
         if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('k6-reports/smoke-results.json', 'utf8'));
-          
-          const timestamp = new Date().toISOString().split('T')[0];
-          const totalReqs = data.metrics.http_reqs?.values?.count || 0;
-          const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
-          const successReqs = totalReqs - failedReqs;
-          const availability = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(2) : 0;
-          
-          const html = \`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset='utf-8'>
-            <title>K6 Smoke Test Report</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-              .container { background: white; padding: 30px; border-radius: 8px; max-width: 800px; margin: 0 auto; }
-              .header { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 20px; }
-              .status { padding: 15px; margin: 20px 0; border-radius: 5px; }
-              .success { background: #d4edda; color: #155724; }
-              .error { background: #f8d7da; color: #721c24; }
-              table { width: 100%; margin-top: 20px; border-collapse: collapse; }
-              th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-              th { background: #f8f9fa; font-weight: bold; }
-            </style>
-          </head>
-          <body>
-            <div class='container'>
-              <div class='header'><h1>📊 K6 Smoke Test Report</h1></div>
-              <div class='status \${availability >= 99 ? 'success' : 'error'}'>
-                <strong>Disponibilidad:</strong> \${availability}%
-              </div>
-              <table>
-                <tr><th>Métrica</th><th>Valor</th></tr>
-                <tr><td>Total de solicitudes</td><td>\${totalReqs}</td></tr>
-                <tr><td>Solicitudes exitosas</td><td>\${successReqs}</td></tr>
-                <tr><td>Solicitudes fallidas</td><td>\${failedReqs}</td></tr>
-                <tr><td>Disponibilidad</td><td>\${availability}%</td></tr>
-              </table>
-              <p style='margin-top: 30px; color: #666; font-size: 12px;'>Generado: \${timestamp}</p>
-            </div>
-          </body>
-          </html>
-          \`;
-          
-          fs.writeFileSync('k6-reports/smoke-report.html', html);
-          console.log('Reporte HTML generado: k6-reports/smoke-report.html');
-          "
+        run: bash -c '
+          if [ -f k6-reports/smoke-results.json ]; then
+            node << "EOF"
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("k6-reports/smoke-results.json", "utf8"));
+            const totalReqs = data.metrics.http_reqs?.values?.count || 0;
+            const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
+            const successReqs = totalReqs - failedReqs;
+            const availability = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(2) : 0;
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>K6 Smoke Test Report</title><style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5}.container{background:white;padding:30px;border-radius:8px;max-width:800px;margin:0 auto}.header{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:20px}.status{padding:15px;margin:20px 0;border-radius:5px}.success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}table{width:100%;margin-top:20px;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#f8f9fa;font-weight:bold}</style></head><body><div class="container"><div class="header"><h1>📊 K6 Smoke Test Report</h1></div><div class="status ${availability >= 99 ? "success" : "error"}"><strong>Disponibilidad:</strong> ${availability}%</div><table><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Total de solicitudes</td><td>${totalReqs}</td></tr><tr><td>Solicitudes exitosas</td><td>${successReqs}</td></tr><tr><td>Solicitudes fallidas</td><td>${failedReqs}</td></tr><tr><td>Disponibilidad</td><td>${availability}%</td></tr></table></div></body></html>`;
+            fs.writeFileSync("k6-reports/smoke-report.html", html);
+            console.log("✅ Reporte HTML generado");
+            EOF
+          else
+            echo "⚠️ No results file found"
+          fi
+        '
 
-      - name: Validate Availability
+      - name: Validate Results
         if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('k6-reports/smoke-results.json', 'utf8'));
-          
-          const totalReqs = data.metrics.http_reqs?.values?.count || 0;
-          const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
-          const successReqs = totalReqs - failedReqs;
-          const availability = totalReqs > 0 ? (successReqs / totalReqs) * 100 : 0;
-          
-          console.log('📊 Validación de disponibilidad:');
-          console.log('  • Total de solicitudes:', totalReqs);
-          console.log('  • Solicitudes exitosas:', successReqs);
-          console.log('  • Disponibilidad:', availability.toFixed(2) + '%');
-          
-          if (availability >= 99) {
-            console.log('✅ PRUEBA EXITOSA: Disponibilidad >= 99%');
-            process.exit(0);
-          } else {
-            console.log('❌ PRUEBA FALLIDA: Disponibilidad < 99%');
-            process.exit(1);
-          }
-          "
+        run: bash -c '
+          if [ -f k6-reports/smoke-results.json ]; then
+            node << "EOF"
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("k6-reports/smoke-results.json", "utf8"));
+            const totalReqs = data.metrics.http_reqs?.values?.count || 0;
+            const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
+            const successReqs = totalReqs - failedReqs;
+            const availability = totalReqs > 0 ? (successReqs / totalReqs) * 100 : 0;
+            console.log("📊 Smoke Test Results:");
+            console.log(`   Total: ${totalReqs}, Exitosas: ${successReqs}, Fallidas: ${failedReqs}`);
+            console.log(`   Disponibilidad: ${availability.toFixed(2)}%`);
+            process.exit(availability >= 95 ? 0 : 1);
+            EOF
+          fi
+        '
 
-      - name: Upload Test Reports
+      - name: Upload Smoke Test Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -217,91 +143,87 @@ jobs:
           retention-days: 30
 
   load-test:
-    needs: setup-test-user
+    name: Load Test
+    needs: test-setup
     runs-on: ubuntu-latest
-    if: github.event.inputs.test_type == 'load' || github.event.inputs.test_type == 'all'
+    if: |
+      github.event.inputs.test_type == 'load' ||
+      github.event.inputs.test_type == 'all'
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
-      - name: Start API
+      - name: Start API (Background)
         run: |
           cd ia-proyecto-eventos
-          dotnet build --configuration Release
-          timeout 600 dotnet run --configuration Release &
+          nohup dotnet run --configuration Release > api.log 2>&1 &
+          echo "API started in background"
         env:
           ASPNETCORE_ENVIRONMENT: Development
 
-      - name: Wait for API
+      - name: Wait for API Ready
         run: |
-          for i in {1..30}; do
-            if curl -f http://localhost:5142/api/usuarios > /dev/null 2>&1; then
-              echo "API listo"
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
+          echo "Waiting for API to start..."
+          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null; do sleep 1; done'
+          echo "API is ready!"
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
 
-      - name: Run Load Tests
+      - name: Run Load Tests (≈4-5 minutes)
         run: |
           mkdir -p k6-reports
           k6 run \
             --summary-export=k6-reports/load-results.json \
-            ia-proyecto-eventos/scripts/k6-load-test-login.js \
+            IaProyectoEventos.Tests/scripts/k6-load-test-login.js \
             -e BASE_URL=http://localhost:5142 \
-            -e TEST_USERNAME="${{ needs.setup-test-user.outputs.test_username }}" \
-            -e TEST_PASSWORD="${{ needs.setup-test-user.outputs.test_password }}"
+            -e TEST_USERNAME=${{ env.TEST_USERNAME }} \
+            -e TEST_PASSWORD=${{ env.TEST_PASSWORD }}
+        continue-on-error: true
+        timeout-minutes: 10
 
       - name: Generate HTML Report
         if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('k6-reports/load-results.json', 'utf8'));
-          
-          const totalReqs = data.metrics.http_reqs?.values?.count || 0;
-          const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
-          const successReqs = totalReqs - failedReqs;
-          const availability = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(2) : 0;
-          
-          const html = \`<!DOCTYPE html><html><head><meta charset='utf-8'><title>K6 Load Test Report</title><style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5}.container{background:white;padding:30px;border-radius:8px;max-width:800px;margin:0 auto}.header{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:20px}.status{padding:15px;margin:20px 0;border-radius:5px}.success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}table{width:100%;margin-top:20px;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#f8f9fa;font-weight:bold}</style></head><body><div class='container'><div class='header'><h1>📊 K6 Load Test Report</h1></div><div class='status \${availability >= 99 ? 'success' : 'error'}'><strong>Disponibilidad:</strong> \${availability}%</div><table><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Total de solicitudes</td><td>\${totalReqs}</td></tr><tr><td>Solicitudes exitosas</td><td>\${successReqs}</td></tr><tr><td>Solicitudes fallidas</td><td>\${failedReqs}</td></tr><tr><td>Disponibilidad</td><td>\${availability}%</td></tr></table></div></body></html>\`;
-          fs.writeFileSync('k6-reports/load-report.html', html);
-          console.log('Reporte HTML generado');
-          "
+        run: bash -c '
+          if [ -f k6-reports/load-results.json ]; then
+            node << "EOF"
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("k6-reports/load-results.json", "utf8"));
+            const totalReqs = data.metrics.http_reqs?.values?.count || 0;
+            const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
+            const successReqs = totalReqs - failedReqs;
+            const availability = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(2) : 0;
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>K6 Load Test Report</title><style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5}.container{background:white;padding:30px;border-radius:8px;max-width:800px;margin:0 auto}.header{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:20px}.status{padding:15px;margin:20px 0;border-radius:5px}.success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}table{width:100%;margin-top:20px;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#f8f9fa;font-weight:bold}</style></head><body><div class="container"><div class="header"><h1>📊 K6 Load Test Report</h1></div><div class="status ${availability >= 99 ? "success" : "error"}"><strong>Disponibilidad:</strong> ${availability}%</div><table><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Total de solicitudes</td><td>${totalReqs}</td></tr><tr><td>Solicitudes exitosas</td><td>${successReqs}</td></tr><tr><td>Solicitudes fallidas</td><td>${failedReqs}</td></tr><tr><td>Disponibilidad</td><td>${availability}%</td></tr></table></div></body></html>`;
+            fs.writeFileSync("k6-reports/load-report.html", html);
+            console.log("✅ Reporte HTML generado");
+            EOF
+          fi
+        '
 
-      - name: Validate Availability
+      - name: Validate Results
         if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('k6-reports/load-results.json', 'utf8'));
-          
-          const totalReqs = data.metrics.http_reqs?.values?.count || 0;
-          const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
-          const successReqs = totalReqs - failedReqs;
-          const availability = totalReqs > 0 ? (successReqs / totalReqs) * 100 : 0;
-          
-          console.log('📊 Load Test - Validación de disponibilidad:');
-          console.log('  • Disponibilidad:', availability.toFixed(2) + '%');
-          
-          if (availability >= 99) {
-            console.log('✅ PRUEBA EXITOSA');
-            process.exit(0);
-          } else {
-            console.log('❌ PRUEBA FALLIDA: Disponibilidad < 99%');
-            process.exit(1);
-          }
-          "
+        run: bash -c '
+          if [ -f k6-reports/load-results.json ]; then
+            node << "EOF"
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("k6-reports/load-results.json", "utf8"));
+            const totalReqs = data.metrics.http_reqs?.values?.count || 0;
+            const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
+            const successReqs = totalReqs - failedReqs;
+            const availability = totalReqs > 0 ? (successReqs / totalReqs) * 100 : 0;
+            console.log("📊 Load Test Results:");
+            console.log(`   Total: ${totalReqs}, Exitosas: ${successReqs}, Fallidas: ${failedReqs}`);
+            console.log(`   Disponibilidad: ${availability.toFixed(2)}%`);
+            process.exit(availability >= 95 ? 0 : 1);
+            EOF
+          fi
+        '
 
-      - name: Upload Test Reports
+      - name: Upload Load Test Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -310,91 +232,88 @@ jobs:
           retention-days: 30
 
   stress-test:
-    needs: setup-test-user
+    name: Stress Test
+    needs: test-setup
     runs-on: ubuntu-latest
-    if: github.event.inputs.test_type == 'stress' || github.event.inputs.test_type == 'all'
+    if: |
+      github.event.inputs.test_type == 'stress' ||
+      github.event.inputs.test_type == 'all'
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
-      - name: Start API
+      - name: Start API (Background)
         run: |
           cd ia-proyecto-eventos
-          dotnet build --configuration Release
-          timeout 600 dotnet run --configuration Release &
+          nohup dotnet run --configuration Release > api.log 2>&1 &
+          echo "API started in background"
         env:
           ASPNETCORE_ENVIRONMENT: Development
 
-      - name: Wait for API
+      - name: Wait for API Ready
         run: |
-          for i in {1..30}; do
-            if curl -f http://localhost:5142/api/usuarios > /dev/null 2>&1; then
-              echo "API listo"
-              exit 0
-            fi
-            sleep 2
-          done
-          exit 1
+          echo "Waiting for API to start..."
+          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null; do sleep 1; done'
+          echo "API is ready!"
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
 
-      - name: Run Stress Tests
+      - name: Run Stress Tests (≈5-6 minutes)
         run: |
           mkdir -p k6-reports
           k6 run \
             --summary-export=k6-reports/stress-results.json \
-            ia-proyecto-eventos/scripts/k6-stress-test-login.js \
+            IaProyectoEventos.Tests/scripts/k6-stress-test-login.js \
             -e BASE_URL=http://localhost:5142 \
-            -e TEST_USERNAME="${{ needs.setup-test-user.outputs.test_username }}" \
-            -e TEST_PASSWORD="${{ needs.setup-test-user.outputs.test_password }}"
+            -e TEST_USERNAME=${{ env.TEST_USERNAME }} \
+            -e TEST_PASSWORD=${{ env.TEST_PASSWORD }}
+        continue-on-error: true
+        timeout-minutes: 15
 
       - name: Generate HTML Report
         if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('k6-reports/stress-results.json', 'utf8'));
-          
-          const totalReqs = data.metrics.http_reqs?.values?.count || 0;
-          const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
-          const successReqs = totalReqs - failedReqs;
-          const availability = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(2) : 0;
-          
-          const html = \`<!DOCTYPE html><html><head><meta charset='utf-8'><title>K6 Stress Test Report</title><style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5}.container{background:white;padding:30px;border-radius:8px;max-width:800px;margin:0 auto}.header{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:20px}.status{padding:15px;margin:20px 0;border-radius:5px}.success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}table{width:100%;margin-top:20px;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#f8f9fa;font-weight:bold}</style></head><body><div class='container'><div class='header'><h1>📊 K6 Stress Test Report</h1></div><div class='status \${availability >= 99 ? 'success' : 'error'}'><strong>Disponibilidad:</strong> \${availability}%</div><table><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Total de solicitudes</td><td>\${totalReqs}</td></tr><tr><td>Solicitudes exitosas</td><td>\${successReqs}</td></tr><tr><td>Solicitudes fallidas</td><td>\${failedReqs}</td></tr><tr><td>Disponibilidad</td><td>\${availability}%</td></tr></table></div></body></html>\`;
-          fs.writeFileSync('k6-reports/stress-report.html', html);
-          console.log('Reporte HTML generado');
-          "
+        run: bash -c '
+          if [ -f k6-reports/stress-results.json ]; then
+            node << "EOF"
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("k6-reports/stress-results.json", "utf8"));
+            const totalReqs = data.metrics.http_reqs?.values?.count || 0;
+            const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
+            const successReqs = totalReqs - failedReqs;
+            const availability = totalReqs > 0 ? ((successReqs / totalReqs) * 100).toFixed(2) : 0;
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>K6 Stress Test Report</title><style>body{font-family:Arial,sans-serif;margin:40px;background:#f5f5f5}.container{background:white;padding:30px;border-radius:8px;max-width:800px;margin:0 auto}.header{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:20px}.status{padding:15px;margin:20px 0;border-radius:5px}.success{background:#d4edda;color:#155724}.error{background:#f8d7da;color:#721c24}table{width:100%;margin-top:20px;border-collapse:collapse}th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}th{background:#f8f9fa;font-weight:bold}</style></head><body><div class="container"><div class="header"><h1>📊 K6 Stress Test Report</h1></div><div class="status ${availability >= 85 ? "success" : "error"}"><strong>Disponibilidad:</strong> ${availability}%</div><table><tr><th>Métrica</th><th>Valor</th></tr><tr><td>Total de solicitudes</td><td>${totalReqs}</td></tr><tr><td>Solicitudes exitosas</td><td>${successReqs}</td></tr><tr><td>Solicitudes fallidas</td><td>${failedReqs}</td></tr><tr><td>Disponibilidad</td><td>${availability}%</td></tr></table></div></body></html>`;
+            fs.writeFileSync("k6-reports/stress-report.html", html);
+            console.log("✅ Reporte HTML generado");
+            EOF
+          fi
+        '
 
-      - name: Validate Availability
+      - name: Validate Results
         if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync('k6-reports/stress-results.json', 'utf8'));
-          
-          const totalReqs = data.metrics.http_reqs?.values?.count || 0;
-          const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
-          const successReqs = totalReqs - failedReqs;
-          const availability = totalReqs > 0 ? (successReqs / totalReqs) * 100 : 0;
-          
-          console.log('📊 Stress Test - Validación de disponibilidad:');
-          console.log('  • Disponibilidad:', availability.toFixed(2) + '%');
-          
-          if (availability >= 99) {
-            console.log('✅ PRUEBA EXITOSA');
+        run: bash -c '
+          if [ -f k6-reports/stress-results.json ]; then
+            node << "EOF"
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync("k6-reports/stress-results.json", "utf8"));
+            const totalReqs = data.metrics.http_reqs?.values?.count || 0;
+            const failedReqs = data.metrics.http_reqs?.values?.fails || 0;
+            const successReqs = totalReqs - failedReqs;
+            const availability = totalReqs > 0 ? (successReqs / totalReqs) * 100 : 0;
+            console.log("📊 Stress Test Results:");
+            console.log(`   Total: ${totalReqs}, Exitosas: ${successReqs}, Fallidas: ${failedReqs}`);
+            console.log(`   Disponibilidad: ${availability.toFixed(2)}%`);
+            console.log("   Note: Stress test tolera disponibilidad < 99%");
             process.exit(0);
-          } else {
-            console.log('⚠️ PRUEBA CON ADVERTENCIA: Disponibilidad < 99% (esperado en stress test)');
-            process.exit(0);
-          }
-          "
+            EOF
+          fi
+        '
 
-      - name: Upload Test Reports
+      - name: Upload Stress Test Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:

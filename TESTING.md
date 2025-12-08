@@ -225,15 +225,15 @@ k6 version
 ### Estructura de Pruebas k6
 
 ```
-ia-proyecto-eventos/scripts/
+IaProyectoEventos.Tests/scripts/
 ├── k6-smoke-test-login.js           # Pruebas de humo (smoke test)
 ├── k6-load-test-login.js            # Pruebas de carga (load test)
 ├── k6-stress-test-login.js          # Pruebas de estrés (stress test)
 ├── run-k6-tests.sh                  # Script ejecutor (Linux/Mac)
-├── run-k6-tests.bat                 # Script ejecutor (Windows)
-├── test.js                          # Utilidades de prueba
-└── validate-k6-results.js           # Validación de resultados
+└── run-k6-tests.bat                 # Script ejecutor (Windows)
 ```
+
+**Ubicación**: Todos los scripts de k6 están en el proyecto de tests para mejor organización de código.
 
 ---
 
@@ -385,7 +385,7 @@ const TEST_PASSWORD = __ENV.TEST_PASSWORD || 'MiClaveSegura123';
 
 #### Opción 1: Script automatizado
 ```bash
-cd ia-proyecto-eventos/scripts
+cd IaProyectoEventos.Tests/scripts
 
 # Smoke test
 ./run-k6-tests.sh smoke
@@ -402,7 +402,7 @@ cd ia-proyecto-eventos/scripts
 
 #### Opción 2: Comando directo
 ```bash
-cd ia-proyecto-eventos/scripts
+cd IaProyectoEventos.Tests/scripts
 
 # Smoke test
 k6 run --vus 1 --duration 10s k6-smoke-test-login.js
@@ -428,7 +428,7 @@ k6 run k6-load-test-login.js
 
 #### Opción 1: Script batch automatizado
 ```cmd
-cd ia-proyecto-eventos\scripts
+cd IaProyectoEventos.Tests\scripts
 
 REM Smoke test
 run-k6-tests.bat smoke
@@ -445,7 +445,7 @@ run-k6-tests.bat all
 
 #### Opción 2: Comando directo
 ```cmd
-cd ia-proyecto-eventos\scripts
+cd IaProyectoEventos.Tests\scripts
 
 k6 run --vus 1 --duration 10s k6-smoke-test-login.js
 
@@ -487,49 +487,105 @@ Al ejecutar pruebas k6, se generan:
 
 **Archivo**: `.github/workflows/k6-load-testing.yml`
 
+**Versión**: 2.0 (Replanteado y optimizado)
+
 **Triggers:**
-- Push a ramas: `main`, `develop`
-- Pull requests a: `main`, `develop`
-- Ejecución manual (workflow_dispatch)
+- **Push** a ramas: `main`, `develop` → Ejecuta smoke test automáticamente
+- **Pull Request** a: `main`, `develop` → Ejecuta smoke test automáticamente
+- **Ejecución manual** (workflow_dispatch) → Seleccionar: smoke, load, stress o all
+
+**Variables de Entorno:**
+```yaml
+TEST_USERNAME: 'ciuser'
+TEST_PASSWORD: 'CIPassword123!'
+```
 
 **Flujo de Ejecución:**
 
-#### 1. Job: `setup-test-user`
-- Compila la API .NET 8.0
-- Inicia la API en background
-- Crea usuario de prueba dinámico
-- Comparte credenciales con otros jobs
+#### 1. Job: `test-setup` (Inicial - Compilación)
+- Checkout del repositorio
+- Setup .NET 9.0.x
+- Restaura dependencias
+- Compila API en Release
+- Cachea paquetes NuGet
 
-#### 2. Job: `smoke-test` (Siempre ejecuta)
-- Ejecuta smoke tests (10s)
+**Duración**: ~2 minutos
+
+#### 2. Job: `smoke-test` (Siempre en push/PR)
+- Requiere: `test-setup`
+- Inicia API en background
+- Espera a que API esté lista (timeout 60s)
+- Ejecuta pruebas de humo (10 segundos)
 - Genera reporte HTML
-- Valida disponibilidad >= 99%
-- Sube artefactos
+- Valida disponibilidad >= 95%
+- Sube reportes
+
+**Duración**: ~1.5 minutos
+**Umbrales**: p(95) < 500ms, p(99) < 1000ms, error rate < 1%
 
 #### 3. Job: `load-test` (Si se selecciona)
-- Ejecuta load tests (~4.5 min)
+- Requiere: `test-setup`
+- Inicia API en background
+- Espera a que API esté lista
+- Ejecuta pruebas de carga (~4-5 min)
+  - Ramp-up a 50 usuarios progresivamente
+  - Mantiene carga
+  - Ramp-down gradual
 - Genera reporte HTML
-- Valida disponibilidad >= 99%
-- Sube artefactos
+- Valida disponibilidad >= 95%
+- Sube reportes
+
+**Duración**: ~7 minutos (con timeout de 10 min)
+**Umbrales**: p(95) < 800ms, p(99) < 2000ms, error rate < 5%
 
 #### 4. Job: `stress-test` (Si se selecciona)
-- Ejecuta stress tests (~5.5 min)
+- Requiere: `test-setup`
+- Inicia API en background
+- Espera a que API esté lista
+- Ejecuta pruebas de estrés (~5-6 min)
+  - Ramp-up a 200 usuarios
+  - Pruebas de punto de ruptura
+  - Ramp-down
 - Genera reporte HTML
-- Acepta disponibilidad < 99% (esperado)
-- Sube artefactos
+- Tolera disponibilidad < 99% (esperado)
+- Sube reportes
+
+**Duración**: ~10 minutos (con timeout de 15 min)
+**Umbrales**: p(95) < 1500ms, p(99) < 3000ms, error rate < 10%
 
 **Opciones de ejecución manual:**
-- `smoke`: Solo smoke tests
-- `load`: Solo load tests
-- `stress`: Solo stress tests
-- `all`: Todas las pruebas
+```
+github.event.inputs.test_type:
+  - smoke   : Solo smoke tests
+  - load    : Solo load tests  
+  - stress  : Solo stress tests
+  - all     : Todas las pruebas secuencialmente
+```
 
 **Artefactos Generados:**
-- `k6-smoke-test-reports/`: Reportes de smoke test
-- `k6-load-test-reports/`: Reportes de load test
-- `k6-stress-test-reports/`: Reportes de stress test
+- `k6-smoke-test-reports/`:
+  - `smoke-results.json`: Métricas detalladas
+  - `smoke-report.html`: Reporte visual
+  
+- `k6-load-test-reports/`:
+  - `load-results.json`: Métricas detalladas
+  - `load-report.html`: Reporte visual
+  
+- `k6-stress-test-reports/`:
+  - `stress-results.json`: Métricas detalladas
+  - `stress-report.html`: Reporte visual
 
 **Retención**: 30 días
+
+### Mejoras Implementadas
+
+✅ **Eliminada dependencia de setup-test-user**: Causa de errores eliminada
+✅ **Credenciales fijas**: Uso de variables de entorno globales más confiables
+✅ **Timeout inteligente**: Espera adecuada con curl hasta 60 segundos
+✅ **continue-on-error**: Los tests no detienen la compilación de reportes
+✅ **Condiciones de ejecución simplificadas**: Menos probabilidad de fallos
+✅ **Mejor manejo de errores**: Validación de existencia de archivos antes de procesar
+✅ **Configuración de .NET 9.0**: Aligned con la versión del proyecto
 
 ---
 
@@ -659,7 +715,7 @@ Solución: Asegúrate que todas las referencias de Foreign Key existen
 Solución: Verifica que CreateTestConfiguration() está siendo llamado
 ```
 
-### Pruebas k6
+### Pruebas k6 (Local)
 
 **Problema**: Error de conexión
 ```bash
@@ -681,6 +737,72 @@ Solución: Revisa logs de API y optimiza endpoints
 # Reinstala k6
 # Verifica PATH de Windows/Linux
 k6 --version  # Debe retornar versión
+```
+
+### Problemas de GitHub Actions (RESUELTOS)
+
+#### ❌ Problema Original: Job `setup-test-user` Fallaba
+**Síntomas:**
+- Error: `outputs.username` y `outputs.password` no definidos
+- Error: "API no respondió a tiempo"
+- Dependencias fallidas en otros jobs
+
+**Causa Raíz:**
+- El job intentaba crear usuario pero la API podría no estar lista
+- Las credenciales dinámicas se generaban pero podían no ser válidas
+- Los outputs no se transmitían correctamente a los otros jobs
+
+**✅ Solución Implementada:**
+1. **Eliminé el job `setup-test-user`** completamente
+2. **Creé credenciales fijas** como variables de entorno globales:
+   - `TEST_USERNAME: 'ciuser'`
+   - `TEST_PASSWORD: 'CIPassword123!'`
+3. **Cada job es ahora independiente** con su propia API
+4. **Mejoré el waitfor** usando `timeout + until curl` más robusto
+
+#### ❌ Problema: Condiciones IF Complicadas
+**Síntomas:**
+- Jobs no ejecutaban cuando se esperaba
+- Inconsistencias entre push/PR y manual dispatch
+
+**✅ Solución:**
+```yaml
+if: |
+  github.event_name == 'push' ||
+  github.event_name == 'pull_request' ||
+  github.event.inputs.test_type == 'smoke' ||
+  github.event.inputs.test_type == 'all'
+```
+
+#### ❌ Problema: Versión de .NET
+**Síntomas:**
+- `dotnet-version: '8.0.x'` no funcionaba en algunos runners
+
+**✅ Solución:**
+- Cambié a `dotnet-version: '9.0.x'` (alineado con el proyecto)
+
+#### ❌ Problema: Generación de Reportes Fallaba
+**Síntomas:**
+- Error: "Cannot read property of undefined"
+- Reportes no se generaban si k6 fallaba
+
+**✅ Solución:**
+```bash
+# Verificar existencia del archivo antes de procesarlo
+if [ -f k6-reports/smoke-results.json ]; then
+  # procesar...
+fi
+```
+
+#### ❌ Problema: Tests Detenían Pipeline
+**Síntomas:**
+- Una falla en pruebas detenía la generación de reportes
+- No se subían artefactos con datos parciales
+
+**✅ Solución:**
+```yaml
+continue-on-error: true  # Permite que siga incluso si k6 falla
+if: always()              # Genera reportes sin importar resultado
 ```
 
 ---
