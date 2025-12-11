@@ -65,18 +65,22 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Start API (Background)
+      - name: Start Services (Docker Compose)
         run: |
           cd ia-proyecto-eventos
-          nohup dotnet run --configuration Release > api.log 2>&1 &
-          echo "API started in background"
-        env:
-          ASPNETCORE_ENVIRONMENT: Development
+          docker-compose up -d
+          echo "Services started..."
+
+      - name: Wait for MySQL Ready
+        run: |
+          echo "Waiting for MySQL to initialize..."
+          timeout 90 bash -c 'until docker exec ia-proyecto-mysql mysqladmin ping -h localhost -u root -prootpassword > /dev/null 2>&1; do sleep 1; done'
+          echo "MySQL is ready!"
 
       - name: Wait for API Ready
         run: |
           echo "Waiting for API to start..."
-          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null; do sleep 1; done'
+          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null 2>&1; do sleep 1; done'
           echo "API is ready!"
 
       - name: Setup k6
@@ -134,6 +138,13 @@ jobs:
           fi
         '
 
+      - name: Cleanup Docker Services
+        if: always()
+        run: |
+          cd ia-proyecto-eventos
+          docker-compose down || true
+          echo "Services cleaned up"
+
       - name: Upload Smoke Test Reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -157,18 +168,22 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Start API (Background)
+      - name: Start Services (Docker Compose)
         run: |
           cd ia-proyecto-eventos
-          nohup dotnet run --configuration Release > api.log 2>&1 &
-          echo "API started in background"
-        env:
-          ASPNETCORE_ENVIRONMENT: Development
+          docker-compose up -d
+          echo "Services started..."
+
+      - name: Wait for MySQL Ready
+        run: |
+          echo "Waiting for MySQL to initialize..."
+          timeout 90 bash -c 'until docker exec ia-proyecto-mysql mysqladmin ping -h localhost -u root -prootpassword > /dev/null 2>&1; do sleep 1; done'
+          echo "MySQL is ready!"
 
       - name: Wait for API Ready
         run: |
           echo "Waiting for API to start..."
-          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null; do sleep 1; done'
+          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null 2>&1; do sleep 1; done'
           echo "API is ready!"
 
       - name: Setup k6
@@ -223,6 +238,13 @@ jobs:
           fi
         '
 
+      - name: Cleanup Docker Services
+        if: always()
+        run: |
+          cd ia-proyecto-eventos
+          docker-compose down || true
+          echo "Services cleaned up"
+
       - name: Upload Load Test Reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -246,18 +268,22 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      - name: Start API (Background)
+      - name: Start Services (Docker Compose)
         run: |
           cd ia-proyecto-eventos
-          nohup dotnet run --configuration Release > api.log 2>&1 &
-          echo "API started in background"
-        env:
-          ASPNETCORE_ENVIRONMENT: Development
+          docker-compose up -d
+          echo "Services started..."
+
+      - name: Wait for MySQL Ready
+        run: |
+          echo "Waiting for MySQL to initialize..."
+          timeout 90 bash -c 'until docker exec ia-proyecto-mysql mysqladmin ping -h localhost -u root -prootpassword > /dev/null 2>&1; do sleep 1; done'
+          echo "MySQL is ready!"
 
       - name: Wait for API Ready
         run: |
           echo "Waiting for API to start..."
-          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null; do sleep 1; done'
+          timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null 2>&1; do sleep 1; done'
           echo "API is ready!"
 
       - name: Setup k6
@@ -312,6 +338,13 @@ jobs:
             EOF
           fi
         '
+
+      - name: Cleanup Docker Services
+        if: always()
+        run: |
+          cd ia-proyecto-eventos
+          docker-compose down || true
+          echo "Services cleaned up"
 
       - name: Upload Stress Test Reports
         if: always()
