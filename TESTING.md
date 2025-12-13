@@ -483,11 +483,22 @@ Al ejecutar pruebas k6, se generan:
 
 ## Integración con CI/CD
 
+### ⚠️ Estado Actual: Workflow v2.1 en Desarrollo
+
+**Información importante sobre GitHub Actions:**
+- **v2.0 actual**: Funciona pero genera errores de conexión a BD porque la API intenta conectarse a MySQL en localhost, que no existe en runners de GitHub
+- **v2.1 (borrador)**: Implementa **Docker Compose** para resolver el problema de inicialización de BD
+- **Estado**: Código de v2.1 está implementado en `.github/workflows/k6-load-testing.yml` pero aún no validado en GitHub Actions
+
+Consulta la sección [**v2.1 Docker Compose Attempt**](#estado-del-workflow-y-docker-compose) al final de este documento para más detalles.
+
+---
+
 ### GitHub Actions Workflow
 
 **Archivo**: `.github/workflows/k6-load-testing.yml`
 
-**Versión**: 2.0 (Replanteado y optimizado)
+**Versión**: 2.0 (Replanteado y optimizado) / 2.1 (Borrador con Docker)
 
 **Triggers:**
 - **Push** a ramas: `main`, `develop` → Ejecuta smoke test automáticamente
@@ -804,6 +815,96 @@ fi
 continue-on-error: true  # Permite que siga incluso si k6 falla
 if: always()              # Genera reportes sin importar resultado
 ```
+
+---
+
+## Estado del Workflow y Docker Compose {#estado-del-workflow-y-docker-compose}
+
+### Problema Identificado en v2.0
+
+El workflow v2.0 ejecuta la API con `dotnet run`, pero fallaba porque:
+
+```
+❌ Error: Unable to connect to database at 'localhost:3306'
+❌ API no puede conectar a MySQL (no existe en runner de GitHub Actions)
+❌ k6 tests fallan por falta de disponibilidad del API
+```
+
+### Solución v2.1 (Borrador)
+
+Se implementó una versión experimental que utiliza **Docker Compose** para resolver el problema:
+
+**Cambios principales:**
+```yaml
+# v2.0 (Problemático)
+- name: Start API (Background)
+  run: cd ia-proyecto-eventos && nohup dotnet run --configuration Release &
+
+# v2.1 (Solución con Docker)
+- name: Start Services (Docker Compose)
+  run: |
+    cd ia-proyecto-eventos
+    docker-compose up -d
+
+- name: Wait for MySQL Ready
+  run: |
+    timeout 90 bash -c 'until docker exec ia-proyecto-mysql mysqladmin ping -h localhost -u root -prootpassword > /dev/null 2>&1; do sleep 1; done'
+```
+
+**Ventajas:**
+- ✅ MySQL se ejecuta en contenedor (garantizado disponible)
+- ✅ Base de datos inicializa automáticamente vía `init-db.sql`
+- ✅ Ambiente idéntico al desarrollo local
+- ✅ Sin errores de conexión a BD
+
+**Estado:**
+- ✅ Código implementado en `.github/workflows/k6-load-testing.yml`
+- ✅ Limpieza automática con `docker-compose down`
+- ⏳ Pendiente validación en GitHub Actions
+- 📋 Listo para pruebas: hacer push a rama y monitorear logs
+
+### Cómo Probar v2.1
+
+1. **Crear rama experimental**:
+   ```bash
+   git checkout -b test/docker-compose-github-actions
+   ```
+
+2. **El código ya está actualizado** (sin cambios adicionales necesarios)
+
+3. **Hacer push y monitorear**:
+   ```bash
+   git push origin test/docker-compose-github-actions
+   ```
+
+4. **En GitHub Actions**:
+   - Ir a `Actions` → `K6 Load Testing - Login`
+   - Monitorear logs de `Start Services (Docker Compose)`
+   - Validar `Wait for MySQL Ready` se completa
+   - Verificar que API responde en `Wait for API Ready`
+
+### Cambios Implementados
+
+| Componente | v2.0 | v2.1 |
+|------------|------|------|
+| **Inicio de API** | `dotnet run` directo | `docker-compose up -d` |
+| **Base de Datos** | Falta (error) | MySQL en contenedor |
+| **Inicialización BD** | N/A | Automática vía init-db.sql |
+| **Wait Logic** | Solo timeout 60s | MySQL + API (total 150s) |
+| **Cleanup** | Manual | Automático `docker-compose down` |
+| **Ambiente** | Diferente a local | Idéntico al local |
+
+### Próximos Pasos
+
+**Si v2.1 funciona:**
+- ✅ Cambios pasan a producción (main branch)
+- ✅ Problema de BD solucionado permanentemente
+
+**Si v2.1 falla:**
+1. Aumentar timeouts a 120-150 segundos
+2. Añadir logs detallados: `docker logs ia-proyecto-mysql`
+3. Alternativa: Usar [GitHub Actions MySQL Service](https://docs.github.com/en/actions/using-containerized-services/creating-mysql-service-containers)
+4. Última opción: Usar SQLite para CI/CD
 
 ---
 

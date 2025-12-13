@@ -1,5 +1,13 @@
 # GitHub Actions Workflow - Guía de Referencia
 
+## ⚠️ Estado Actual: Borrador (v2.1 - En Desarrollo)
+
+**Nota importante**: Se implementó una versión v2.1 que utiliza **Docker Compose** para garantizar que MySQL esté disponible durante las pruebas (ver [Sección Docker Compose Attempt](#docker-compose-attempt-v21)). Sin embargo, esta versión aún no ha sido validada en el entorno de producción de GitHub Actions. 
+
+El flujo sigue funcionando con `dotnet run` directo, pero genera errores de conexión a BD. **El borrador Docker Compose está disponible y listo para ser probado cuando sea necesario.**
+
+---
+
 ## Resumen de Cambios v2.0
 
 El workflow de GitHub Actions ha sido **completamente replanteado** para resolver problemas de confiabilidad y escalabilidad.
@@ -243,8 +251,120 @@ git push origin develop  # Ejecuta smoke-test automáticamente
 - [ ] API security scanning
 - [ ] Performance regression detection
 
+---
+
+## Docker Compose Attempt (v2.1) {#docker-compose-attempt-v21}
+
+### ¿Qué es?
+
+Se implementó una versión experimental del workflow (v2.1) que utiliza **Docker Compose** para iniciar tanto MySQL como la API en contenedores durante la ejecución en GitHub Actions.
+
+### ¿Por qué?
+
+**Problema Original**: 
+- La API requiere MySQL para funcionar
+- GitHub Actions runners no tienen MySQL pre-instalado
+- `dotnet run` directo genera error: `Unable to connect to MySQL server`
+
+**Solución Intentada**:
+```yaml
+# Nuevo flujo en v2.1
+- name: Start Services (Docker Compose)
+  run: |
+    cd ia-proyecto-eventos
+    docker-compose up -d
+
+- name: Wait for MySQL Ready
+  run: |
+    timeout 90 bash -c 'until docker exec ia-proyecto-mysql mysqladmin ping -h localhost -u root -prootpassword > /dev/null 2>&1; do sleep 1; done'
+
+- name: Wait for API Ready
+  run: |
+    timeout 60 bash -c 'until curl -s http://localhost:5142/api/usuarios > /dev/null 2>&1; do sleep 1; done'
+```
+
+### Estado Actual
+
+- ✅ **Código implementado**: `.github/workflows/k6-load-testing.yml` (líneas 68-84, 164-180, 257-273)
+- ⏳ **Validación pendiente**: No se ha ejecutado en GitHub Actions aún
+- 📋 **Borrador disponible**: El código está listo para ser probado
+
+### Cómo Activar v2.1
+
+1. **Crear rama experimental**:
+   ```bash
+   git checkout -b feature/docker-compose-github-actions
+   ```
+
+2. **El código ya está en el workflow** (modificado con `replace_all`)
+
+3. **Hacer push**:
+   ```bash
+   git push origin feature/docker-compose-github-actions
+   ```
+
+4. **Monitorear en GitHub**:
+   - Ir a `Actions` → `K6 Load Testing - Login`
+   - Observar logs de `Start Services` y `Wait for MySQL Ready`
+   - Validar que API responde en `Wait for API Ready`
+
+### Cambios en v2.1 vs v2.0
+
+```diff
+  smoke-test:
+    steps:
+-     - name: Start API (Background)
++     - name: Start Services (Docker Compose)
+-       run: nohup dotnet run --configuration Release
++       run: docker-compose up -d
++
++     - name: Wait for MySQL Ready
++       run: docker exec ia-proyecto-mysql mysqladmin ping
+```
+
+### Beneficios Esperados
+
+- ✅ MySQL disponible de inmediato
+- ✅ Inicialización de BD automática vía `init-db.sql`
+- ✅ Mismo entorno que desarrollo local
+- ✅ Sin errores de conexión
+
+### Riesgos Potenciales
+
+- ⚠️ GitHub Actions runners tienen Docker pero pueden ser lentos
+- ⚠️ Timeout de 90s para MySQL podría ser insuficiente
+- ⚠️ Limpieza con `docker-compose down` es importante
+
+### Próximos Pasos si v2.1 Falla
+
+1. **Aumentar timeouts** (líneas 77, 180, 266):
+   ```bash
+   timeout 120 bash -c 'until ...'  # Aumentar a 120s
+   ```
+
+2. **Añadir logs detallados**:
+   ```bash
+   - name: Debug MySQL
+     run: docker logs ia-proyecto-mysql
+   ```
+
+3. **Usar MySQL Service en GitHub Actions** (alternativa):
+   ```yaml
+   services:
+     mysql:
+       image: mysql:8.0
+       options: >-
+         --health-cmd "mysqladmin ping"
+   ```
+
+4. **Considerar SQLite para CI/CD** (más simple)
+
+---
+
 ## Recursos
 
 - [k6 Documentation](https://k6.io/docs/)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [.NET Testing Documentation](https://learn.microsoft.com/en-us/dotnet/core/testing/)
+- [GitHub Actions Docker Support](https://docs.github.com/en/actions/using-containerized-services)
+- [Docker Compose en CI/CD](https://docs.docker.com/compose/ci/)
